@@ -1,0 +1,22 @@
+library(clusterProfiler)
+library(org.Rn.eg.db)
+
+proteins <- read.csv("protein_abundances.csv", check.names = FALSE)
+hc <- as.matrix(proteins[, paste0("normalized_A", 1:4)])
+glm <- as.matrix(proteins[, paste0("normalized_B", 1:4)])
+pca <- prcomp(t(log2(cbind(hc, glm))), center = TRUE, scale. = TRUE)
+proteins$pvalue <- vapply(seq_len(nrow(proteins)), function(i) t.test(glm[i, ], hc[i, ], var.equal = TRUE)$p.value, numeric(1))
+proteins$FC <- rowMeans(glm) / rowMeans(hc)
+dep <- subset(proteins, pvalue < 0.05 & (FC >= 1.5 | FC <= 0.67))
+mapping <- read.csv("rat_protein_entrez_mapping.csv")
+proteins$ENTREZID <- mapping$ENTREZID[match(proteins$Accession, mapping$Accession)]
+dep$ENTREZID <- proteins$ENTREZID[match(dep$Accession, proteins$Accession)]
+foreground <- unique(na.omit(dep$ENTREZID))
+background <- unique(na.omit(proteins$ENTREZID))
+go <- enrichGO(foreground, universe = background, OrgDb = org.Rn.eg.db, ont = "ALL", pAdjustMethod = "BH", pvalueCutoff = 1, qvalueCutoff = 1)
+kegg <- enrichKEGG(foreground, universe = background, organism = "rno", pvalueCutoff = 1, qvalueCutoff = 1)
+write.csv(pca$x, "proteomics_pca_scores.csv")
+write.csv(proteins, "protein_differential_statistics.csv", row.names = FALSE)
+write.csv(dep, "differential_proteins.csv", row.names = FALSE)
+write.csv(subset(go@result, pvalue < 0.05), "protein_go_enrichment.csv", row.names = FALSE)
+write.csv(subset(kegg@result, pvalue < 0.05), "protein_kegg_enrichment.csv", row.names = FALSE)
